@@ -1,0 +1,95 @@
+---
+title: "Coursera Johns Hopkins - Machine Learning - Course Project"
+author: "Marcus Rehm"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+
+The goal of this work is to create a model that is able to identify how well a participant of the experiment performs a particular exercise. They were asked to perform it 5 times according to the experiment especification as follows:
+
+* Exactly according to the specification (Class A);
+* Throwing the elbows to the front (Class B);
+* Lifting the dumbbell only halfway (Class C);
+* Lowering the dumbbell only halfway (Class D);
+* Throwing the hips to the front (Class E);
+ 
+More about the experiment can be [read here](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises). 
+
+### Acquiring Data
+After download the data, it can be loaded into R: 
+```{r}
+training <- read.csv(file = 'pml-training.csv', header = TRUE, sep = ',', na.strings=c("NA","","#DIV/0!"))
+testing <- read.csv(file = 'pml-testing.csv', header = TRUE, sep = ',', na.strings=c("NA","","#DIV/0!"))
+```
+
+### Exploratory Data Analysis
+Both `training` and `testing` datasets have 160 variables/features each one.
+```{r}
+length(names(training))
+length(names(testing))
+```
+The variables in dataset are related to measurements acquired by the arm, forearm, belt and dumbbell sensors. For each sensor was monitored the x, y and z positions as well as its accelerations and other additional measures.
+
+As the goal is to predict the correctness of the exercise, we don't need all the variables in dataset, just those related with x, y and z axis and their accelerations. As the dataset contains the total acceleration for each sensor, we will use it because it represents the resultant acceleration. This way we can discharge the individual axis accelerations.
+
+The features selected (17 at all) for our model were:
+```{r}
+features <- which(sapply(X = names(training), FUN = grepl, pattern = '^total_accel|gyros|classe'))
+features
+```
+
+```{r}
+training <- training[, features]
+testing <- testing[, features]
+```
+
+### Building The Model
+The study desing considered 70% of the observations in `training` dataset to train the model and 30% of observations to `cross validation`.
+
+```{r}
+library(caret)
+index <- createDataPartition(y = training$classe, p = 0.7, list = FALSE)
+validation <- training[-index,]
+training <- training[index,]
+```
+
+To buil the model the `doParallel` library was used to processing to be parallelized. The algorithm choosen to build it was the `random forest`.
+
+```{r}
+library(doParallel)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+set.seed(32343)
+modelFit <- train(classe ~ ., data = training, method = 'rf')
+stopCluster(cl)
+
+modelFit$finalModel
+```
+
+As described above, the best approach for the algorithm was split the trees using two predictors at each node.
+
+Its error rate for each classe decreased near 500 trees, but was still above 0.05%:
+```{r}
+plot(modelFit$finalModel, main= "Error Rates")
+```
+
+The Accuracy between the models used to create the optimal one was:
+```{r}
+plot(modelFit, main = "Model Accuracy", xlab = "Predictors", 
+     ylab = "Accuracy")
+```
+
+After build the model, the predictions to cross validate it were created:
+```{r}
+validation$prediction <- predict(modelFit, validation)
+confusionMatrix(validation$prediction, validation$classe)
+```
+
+The `confusion matrix` above showed that the model predicted the values with an Accuracy of 0.9256 and its Kappa value, the agreement between true observations and predicted ones, was about 0.9057.
+
+### Predict the 20 Samples
+As asked on the second part of the project, the model was used to predict 20 samples classes. The results was:
+```{r}
+testing$prediction <- predict(modelFit, testing)
+as.character(testing$prediction)
+```
